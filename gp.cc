@@ -1,6 +1,7 @@
 #include <algorithm>
 using std::find;
 using std::swap;
+#include <cassert>
 #include <iostream>
 using std::cout;
 using std::cerr;
@@ -163,6 +164,7 @@ public:
   virtual bool isEvaluated() const { return evaluated; }
   virtual int Evaluate() {
     evaluated = true;
+    // cout << Name() << "->Evaluate() = " << value << "\n";
     return value;
   }
 
@@ -184,7 +186,10 @@ struct Input {
   string toString() const { return iNode->toString(); }
   void Reset() { iNode->Reset(); }
   bool isEvaluated() const { return iNode->isEvaluated(); }
-  int Evaluate() { return iNode->Evaluate() * weight; }
+  int Evaluate() {
+    // cout << Name() << "->Evaluate() = " << iNode->Evaluate() << " * " << weight << "\n";
+    return iNode->Evaluate() * weight;
+  }
 
   INode *iNode;
   int weight;
@@ -268,18 +273,20 @@ public:
   }
   void Reset() {
     if (isEvaluated()) {
+      evaluated = false;
       for (auto i = begin(); i != end(); i++) {
 	i->Reset();
       }
-      evaluated = false;
     }
   }
   bool isEvaluated() const { return evaluated; }
   int Evaluate() {
     if (!isEvaluated()) {
+      // cout << Name() << "->Evaluate()...\n";
       value = 0;
       for (auto i = begin(); i != end(); i++) {
 	value += i->Evaluate();
+        // cout << Name() << "->Evaluate() = " << value << "...\n";
       }
       evaluated = true;
     }
@@ -550,10 +557,12 @@ public:
       int oValue = ONode::Evaluate();
 
       if (threshold < 0) {
-	value = (oValue < threshold) ? oValue - threshold : threshold;
+        value = (oValue < threshold) ? oValue - threshold : threshold;
       } else {
-	value = (threshold < oValue) ? oValue - threshold : threshold;
+        value = (threshold < oValue) ? oValue - threshold : threshold;
       }
+      // cout << Name() << "->Evaluate() = " << value << " - " << threshold << "\n";
+      value = oValue - threshold;
     }
     return value;
   }
@@ -706,27 +715,28 @@ void Dump() {
   cout << "}\n";
 }
 
-GNode *buildRandom()
-{
+static size_t builtNRandomNodes;
+
+GNode *buildRandom() {
   static int likelihoods[EoKind] = {
-    1, // 5, // Ser
-    1, // 5, // Par
-    2, // 2, // IInc
-    2, // 2, // IDec
-    2, // 2, // ICut
-    2, // 2, // OInc
-    2, // 2, // ODec
-    2, // 2, // OCut
-    2, // 2, // WInc
-    2, // 2, // WDec
-    2, // 2, // WShl
-    2, // 2, // WShr
-    2, // 2, // TInc
-    2, // 2, // TDec
-    2, // 2, // TShl
-    2, // 2, // TShr
-    2, // 2, // Wait
-    4, // 1, // End
+     5, // 5, // Ser
+     5, // 5, // Par
+     2, // 2, // IInc
+     2, // 2, // IDec
+     1, // 2, // ICut
+     2, // 2, // OInc
+     2, // 2, // ODec
+     1, // 2, // OCut
+     2, // 2, // WInc
+     2, // 2, // WDec
+     2, // 2, // WShl
+     2, // 2, // WShr
+     2, // 2, // TInc
+     2, // 2, // TDec
+     2, // 2, // TShl
+     2, // 2, // TShr
+     2, // 2, // Wait
+     0, // 1, // End
   };
   static int maxLikelihoods = 0;
 
@@ -736,51 +746,51 @@ GNode *buildRandom()
     }
   }
 
+  if (++builtNRandomNodes < 100) {
+    return new GNode(End);
+  }
+
   int choose = rand() % maxLikelihoods;
   for (auto k = Ser; k < EoKind; k = GKind(int(k) + 1)) {
     choose -= likelihoods[k];
     if (choose <= 0) {
       switch (k) {
-      case Ser:
-      case Par:
-	{
-	  GNode *lChild = buildRandom();
-	  GNode *rChild = buildRandom();
-	  return new GNode(k, lChild, rChild);
-	}
-      case IInc:
-      case IDec:
-      case ICut:
-      case OInc:
-      case ODec:
-      case OCut:
-      case WInc:
-      case WDec:
-      case WShl:
-      case WShr:
-      case TInc:
-      case TDec:
-      case TShl:
-      case TShr:
-      case Wait:
-	{
-	  GNode *lChild = buildRandom();
-	  return new GNode(k, lChild);
-	}
-      case End:
-	return new GNode(k);
+        case Ser:
+        case Par:
+          {
+            GNode *lChild = buildRandom();
+            GNode *rChild = buildRandom();
+            return new GNode(k, lChild, rChild);
+          }
+        case IInc:
+        case IDec:
+        case ICut:
+        case OInc:
+        case ODec:
+        case OCut:
+        case WInc:
+        case WDec:
+        case WShl:
+        case WShr:
+        case TInc:
+        case TDec:
+        case TShl:
+        case TShr:
+        case Wait:
+          {
+            GNode *lChild = buildRandom();
+            return new GNode(k, lChild);
+          }
+        case End:
+          return new GNode(k);
       }
     }
   }
-
 }
 
-int main(int argc, char const *argv[])
-{
+int main(int argc, char const *argv[]) {
   int seed = time(0);
-  cout << "Seed = " << seed << "\n", 
-
-  srand(seed);
+  cout << "Seed = " << seed << "\n", srand(seed);
 
   // GNode *genome =
   //   GenSer(GenPar(GenIInc(GenICut(GenEnd())),
@@ -792,16 +802,17 @@ int main(int argc, char const *argv[])
   // 		  GenWDec(GenEnd())
   // 		 )
   // 	   );
+  builtNRandomNodes = 0;
   GNode *genome = buildRandom();
 
   cout << "genome = " << genome->toString() << "\n";
 
   // ONode *oNode = new ONode();
   // ONodes.push_back(oNode);
-  // 
+  //
   // INode *iNode = new INode();
   // INodes.push_back(iNode);
-  // 
+  //
   // PNode *pNode = new PNode(ONodes, INodes, 0, 0, genome, genome);
   // PNodes.push_back(pNode);
 
@@ -817,7 +828,7 @@ int main(int argc, char const *argv[])
   INodes[2]->setValue(0);
 
   PNodes.push_back(new PNode(ONodes, INodes, 0, 0, genome, genome));
-  
+
   Dump();
 
   bool isDone = false;
@@ -829,7 +840,11 @@ int main(int argc, char const *argv[])
       PNode *pNode = PNodes[p];
 
       if (pNode->hasMore()) {
-	// cout << "# Growing by " << ::toString(pNode->getKind()) << ": " << pNode->toString() << "\n";
+	cout << "# Growing by "
+             << ::toString(pNode->getKind())
+             << ": "
+             << pNode->toString()
+             << "\n";
 
 	if (!pNode->Grow()) {
 	  hasMore += 1;
@@ -837,8 +852,10 @@ int main(int argc, char const *argv[])
       }
     }
 
-    // cout << "# " << cycle << " ------------------------------------------------------------------------\n";
-    // Dump();
+    cout << "# "
+         << cycle
+         << " ------------------------------------------------------------------------\n";
+    Dump();
 
     isDone = 0 == hasMore && nPNodes == PNodes.size();
   }
@@ -893,36 +910,66 @@ int main(int argc, char const *argv[])
   // };
   // 
   // for (size_t t = 0; t < (sizeof(trials) / sizeof(trials[0])); t += 1) {
-  //     for (size_t i = 0; i < 3; i += 1) {
-  // 	INodes[i]->setValue(trials[t][i]);
-  //     }
+  //   // ONodes[0]->Reset();
+  //   // ONodes[1]->Reset();
   // 
-  //     ONodes[0]->Reset();
-  //     ONodes[1]->Reset();
+  //   for (auto &i : INodes) {
+  //     i->Reset();
+  //   }
+  //   for (auto &o : ONodes) {
+  //     o->Reset();
+  //   }
+  //   for (auto &p : PNodes) {
+  //     p->Reset();
+  //   }
   // 
-  //     int o0 = ONodes[0]->Evaluate();
-  //     int o1 = ONodes[1]->Evaluate();
+  //   for (size_t i = 0; i < 3; i += 1) {
+  //     INodes[i]->setValue(trials[t][i]);
+  //   }
   // 
-  //     Dump();
+  //   int o0 = ONodes[0]->Evaluate();
+  //   int o1 = ONodes[1]->Evaluate();
   // 
-  //     cout << "{" << trials[t][0] << "," << trials[t][1] << "," << trials[t][2] << "} -> {" << o0 << "," << o1 << "}\n";
+  //   Dump();
+  // 
+  //   cout << "{"
+  //        << trials[t][0]
+  //        << ","
+  //        << trials[t][1]
+  //        << ","
+  //        << trials[t][2]
+  //        << "} -> {"
+  //        << o0
+  //        << ","
+  //        << o1
+  //        << "}\n";
   // }
 
   for (size_t t = 0; t < 1000; t += 1) {
-      INodes[0]->setValue(rand() % 11 - 5);
-      INodes[1]->setValue(rand() % 11 - 5);
-      INodes[2]->setValue(rand() % 11 - 5);
+    for (auto &i : INodes) {
+      i->Reset();
+    }
+    for (auto &o : ONodes) {
+      o->Reset();
+    }
+    for (auto &p : PNodes) {
+      p->Reset();
+    }
 
-      ONodes[0]->Reset();
-      ONodes[1]->Reset();
+    INodes[0]->setValue(rand() % 11 - 5);
+    INodes[1]->setValue(rand() % 11 - 5);
+    INodes[2]->setValue(rand() % 11 - 5);
 
-      int o0 = ONodes[0]->Evaluate();
-      int o1 = ONodes[1]->Evaluate();
+    ONodes[0]->Reset();
+    ONodes[1]->Reset();
 
-      cout << "{" << INodes[0]->Evaluate()
-	   << "," << INodes[1]->Evaluate()
-	   << "," << INodes[2]->Evaluate()
-	   << "} -> {" << o0 << "," << o1 << "}\n";
+    int o0 = ONodes[0]->Evaluate();
+    int o1 = ONodes[1]->Evaluate();
+
+    cout << "{" << INodes[0]->Evaluate()
+         << "," << INodes[1]->Evaluate()
+         << "," << INodes[2]->Evaluate()
+         << "} -> {" << o0 << "," << o1 << "}\n";
   }
 
   Dump();

@@ -1,7 +1,10 @@
 #include <algorithm>
 using std::find;
 using std::swap;
+#include <array>
+using std::array;
 #include <cassert>
+#include <cmath>
 #include <iostream>
 using std::cout;
 using std::cerr;
@@ -156,13 +159,13 @@ public:
     return 0;
   }
   void cutONode();
-  void setValue(int _value) {
+  void setValue(double _value) {
     evaluated = true;
     value = _value;
   }
   void Reset() { evaluated = false; }
   virtual bool isEvaluated() const { return evaluated; }
-  virtual int Evaluate() {
+  virtual double Evaluate() {
     evaluated = true;
     // cout << Name() << "->Evaluate() = " << value << "\n";
     return value;
@@ -171,11 +174,11 @@ public:
 protected:
   int oLink;
   bool evaluated;
-  int value;
+  double value;
 };
 
 struct Input {
-  Input(INode *_iNode, int _weight = 1) : iNode(_iNode), weight(_weight) { }
+  Input(INode *_iNode, double _weight = 1.0) : iNode(_iNode), weight(_weight) { }
   bool operator==(Input const &that) const { return iNode == that.iNode; }
   bool operator==(INode const *&that) const { return iNode == that; }
   bool operator<(Input const &that) const { return iNode < that.iNode || (iNode == that.iNode && weight < that.weight); }
@@ -186,13 +189,13 @@ struct Input {
   string toString() const { return iNode->toString(); }
   void Reset() { iNode->Reset(); }
   bool isEvaluated() const { return iNode->isEvaluated(); }
-  int Evaluate() {
+  double Evaluate() {
     // cout << Name() << "->Evaluate() = " << iNode->Evaluate() << " * " << weight << "\n";
     return iNode->Evaluate() * weight;
   }
 
   INode *iNode;
-  int weight;
+  double weight;
 };
 
 class ONode : public vector<Input> {
@@ -246,7 +249,7 @@ public:
     }
 
     Input &input = (*this)[iLinkAsIndex()];
-    input.weight += by;
+    input.weight += double(by);
   }
   void shiftInputWeight(int by) {
     if (empty()) {
@@ -254,7 +257,14 @@ public:
     }
 
     Input &input = (*this)[iLinkAsIndex()];
-    input.weight << by;
+    while (by < 0) {      
+      input.weight /= 2.0;
+      by += 1;
+    }
+    while (0 < by) {
+      input.weight *= 2.0;
+      by -= 1;
+    }
   }
   void cutINode() {
     if (empty()) {
@@ -280,7 +290,7 @@ public:
     }
   }
   bool isEvaluated() const { return evaluated; }
-  int Evaluate() {
+  double Evaluate() {
     if (!isEvaluated()) {
       // cout << Name() << "->Evaluate()...\n";
       value = 0;
@@ -288,6 +298,7 @@ public:
 	value += i->Evaluate();
         // cout << Name() << "->Evaluate() = " << value << "...\n";
       }
+      value = tanh(value);
       evaluated = true;
     }
     return value;
@@ -296,7 +307,7 @@ public:
 protected:
   int iLink;
   bool evaluated;
-  int value;
+  double value;
 };
 
 class PNode : public INode, public ONode {
@@ -304,7 +315,7 @@ public:
   PNode(std::initializer_list<ONode *> oNodes,
 	std::initializer_list<INode *> iNodes,
 	int _iLink = 0,
-	int _threshold = 0,
+	double _threshold = 0,
 	GNode *_genome = 0,
 	GNode *_genomeReader = 0
        ) :
@@ -318,7 +329,7 @@ public:
   PNode(vector<ONode *> const &oNodes,
 	vector<INode *> const &iNodes,
 	int _iLink = 0,
-	int _threshold = 0,
+	double _threshold = 0,
 	GNode *_genome = 0,
 	GNode *_genomeReader = 0
        ) :
@@ -332,7 +343,7 @@ public:
   PNode(std::initializer_list<ONode *> oNodes,
 	std::initializer_list<Input> iNodes,
 	int _iLink = 0,
-	int _threshold = 0,
+	double _threshold = 0,
 	GNode *_genome = 0,
 	GNode *_genomeReader = 0
        ) :
@@ -464,6 +475,8 @@ public:
     case End:
       done();
       break;
+    case EoKind:
+      break;
     }
 
     if (kind != End) {
@@ -529,10 +542,17 @@ public:
     ONode::shiftInputWeight(by);
   }
   void bumpThreshold(int by) {
-    threshold += by;
+    threshold += double(by);
   }
   void shiftThreshold(int by) {
-    threshold << by;
+    while (by < 0) {      
+      threshold /= 2.0;
+      by += 1;
+    }
+    while (0 < by) {
+      threshold *= 2.0;
+      by -= 1;
+    }
   }
   void cutINode() {
     ONode::cutINode();
@@ -552,17 +572,17 @@ public:
   }
   void Reset() { ONode::Reset(); }
   virtual bool isEvaluated() const { return ONode::isEvaluated(); }
-  virtual int Evaluate() {
+  virtual double Evaluate() {
     if (!isEvaluated()) {
-      int oValue = ONode::Evaluate();
+      double oValue = ONode::Evaluate();
 
-      if (threshold < 0) {
+      if (threshold < 0.0) {
         value = (oValue < threshold) ? oValue - threshold : threshold;
       } else {
         value = (threshold < oValue) ? oValue - threshold : threshold;
       }
       // cout << Name() << "->Evaluate() = " << value << " - " << threshold << "\n";
-      value = oValue - threshold;
+      // value = oValue - threshold;
     }
     return value;
   }
@@ -570,8 +590,8 @@ public:
 private:
   PNode() : threshold(0), genome(0), genomeReader(0) { }
 
-  int threshold;
-  int value;
+  double threshold;
+  double value;
   GNode *genome;
   GNode *genomeReader;
 };
@@ -715,28 +735,27 @@ void Dump() {
   cout << "}\n";
 }
 
-static size_t builtNRandomNodes;
-
-GNode *buildRandom() {
+GNode *buildRandom(size_t depth = 0) {
+  static size_t builtNRandomNodes;
   static int likelihoods[EoKind] = {
-     5, // 5, // Ser
-     5, // 5, // Par
-     2, // 2, // IInc
-     2, // 2, // IDec
-     1, // 2, // ICut
-     2, // 2, // OInc
-     2, // 2, // ODec
-     1, // 2, // OCut
-     2, // 2, // WInc
-     2, // 2, // WDec
-     2, // 2, // WShl
-     2, // 2, // WShr
-     2, // 2, // TInc
-     2, // 2, // TDec
-     2, // 2, // TShl
-     2, // 2, // TShr
-     2, // 2, // Wait
-     0, // 1, // End
+     50, // 5, // Ser
+     50, // 5, // Par
+     10, // 2, // IInc
+     10, // 2, // IDec
+      5, // 2, // ICut
+     10, // 2, // OInc
+     10, // 2, // ODec
+      5, // 2, // OCut
+     20, // 2, // WInc
+     20, // 2, // WDec
+     20, // 2, // WShl
+     20, // 2, // WShr
+     20, // 2, // TInc
+     20, // 2, // TDec
+     20, // 2, // TShl
+     20, // 2, // TShr
+     20, // 2, // Wait
+     10, // 1, // End
   };
   static int maxLikelihoods = 0;
 
@@ -746,7 +765,15 @@ GNode *buildRandom() {
     }
   }
 
-  if (++builtNRandomNodes < 100) {
+  if (depth == 0) {
+    builtNRandomNodes = 0;
+  }
+
+  builtNRandomNodes += 1;
+  if (2000 < builtNRandomNodes && rand() % 10 == 0) {
+    return new GNode(End);
+  }
+  if (20 < depth && rand() % 4 == 0) {
     return new GNode(End);
   }
 
@@ -758,8 +785,8 @@ GNode *buildRandom() {
         case Ser:
         case Par:
           {
-            GNode *lChild = buildRandom();
-            GNode *rChild = buildRandom();
+            GNode *lChild = buildRandom(depth + 1);
+            GNode *rChild = buildRandom(depth + 1);
             return new GNode(k, lChild, rChild);
           }
         case IInc:
@@ -778,201 +805,171 @@ GNode *buildRandom() {
         case TShr:
         case Wait:
           {
-            GNode *lChild = buildRandom();
+            GNode *lChild = buildRandom(depth + 1);
             return new GNode(k, lChild);
           }
         case End:
           return new GNode(k);
+        case EoKind:
+	  break;
       }
     }
   }
+  return new GNode(End);
 }
 
 int main(int argc, char const *argv[]) {
   int seed = time(0);
   cout << "Seed = " << seed << "\n", srand(seed);
 
-  // GNode *genome =
-  //   GenSer(GenPar(GenIInc(GenICut(GenEnd())),
-  // 		  GenICut(GenEnd())
-  // 		 ),
-  // 	   GenSer(GenPar(GenTInc(GenEnd()),
-  // 			 GenEnd()
-  // 			),
-  // 		  GenWDec(GenEnd())
-  // 		 )
-  // 	   );
-  builtNRandomNodes = 0;
-  GNode *genome = buildRandom();
+  array<GNode *, 10> genomes;
+  for (size_t i = 0; i < genomes.size(); i += 1) {
+    genomes[i] = buildRandom(0);
+    cout << "genomes[" << i << "] = " << genomes[i]->toString() << "\n";
 
-  cout << "genome = " << genome->toString() << "\n";
+    for (auto &o : ONodes) {
+      delete o;
+    }
+    ONodes.clear();
 
-  // ONode *oNode = new ONode();
-  // ONodes.push_back(oNode);
-  //
-  // INode *iNode = new INode();
-  // INodes.push_back(iNode);
-  //
-  // PNode *pNode = new PNode(ONodes, INodes, 0, 0, genome, genome);
-  // PNodes.push_back(pNode);
+    ONodes.push_back(new ONode());
 
-  ONodes.push_back(new ONode());
-  ONodes.push_back(new ONode());
+    for (auto &i : INodes) {
+      delete i;
+    }
+    INodes.clear();
 
-  INodes.push_back(new INode());
-  INodes.push_back(new INode());
-  INodes.push_back(new INode());
+    INodes.push_back(new INode());
+    INodes.push_back(new INode());
+    INodes.push_back(new INode());
 
-  INodes[0]->setValue(0);
-  INodes[1]->setValue(0);
-  INodes[2]->setValue(0);
-
-  PNodes.push_back(new PNode(ONodes, INodes, 0, 0, genome, genome));
-
-  Dump();
-
-  bool isDone = false;
-  for (size_t cycle = 0; !isDone; cycle += 1) {
-    size_t hasMore = 0;
-    size_t nPNodes = PNodes.size();
-
-    for (size_t p = 0; p < nPNodes; p += 1) {
-      PNode *pNode = PNodes[p];
-
-      if (pNode->hasMore()) {
-	cout << "# Growing by "
-             << ::toString(pNode->getKind())
-             << ": "
-             << pNode->toString()
-             << "\n";
-
-	if (!pNode->Grow()) {
-	  hasMore += 1;
-	}
-      }
+    for (auto &i : INodes) {
+      i->setValue(0);
     }
 
-    cout << "# "
-         << cycle
-         << " ------------------------------------------------------------------------\n";
+    for (auto &p : PNodes) {
+      delete p;
+    }
+    PNodes.clear();
+
+    PNodes.push_back(new PNode(ONodes, INodes, 0, 0, genomes[i], genomes[i]));
+
     Dump();
 
-    isDone = 0 == hasMore && nPNodes == PNodes.size();
-  }
+    bool isDone = false;
+    for (size_t cycle = 0; !isDone; cycle += 1) {
+      size_t hasMore = 0;
+      size_t nPNodes = PNodes.size();
 
-  int o0 = ONodes[0]->Evaluate();
-  int o1 = ONodes[1]->Evaluate();
+      for (size_t p = 0; p < nPNodes; p += 1) {
+	PNode *pNode = PNodes[p];
 
-  // cout << "{0,1,2} -> {" << o0 << "," << o1 << "}\n";
-  // Dump();
+	if (pNode->hasMore()) {
+	  // cout << "# Growing by "
+	  //      << ::toString(pNode->getKind())
+	  //      << ": "
+	  //      << pNode->toString()
+	  //      << "\n";
 
-  size_t p = 0;
-  while (p < PNodes.size()) {
-    if (!PNodes[p]->isEvaluated()) {
-      if ((p + 1) < PNodes.size()) {
-	std::swap(PNodes[p], PNodes.back());
+	  if (!pNode->Grow()) {
+	    hasMore += 1;
+	  }
+	}
       }
-      delete PNodes.back();
-      PNodes.pop_back();
-    } else {
-      p += 1;
-    }
-  }
 
-  // int trials[][3] = {
-  //   { -1, -1, -1 },
-  //   { -1, -1,  0 },
-  //   { -1, -1,  1 },
-  //   { -1,  0, -1 },
-  //   { -1,  0,  0 },
-  //   { -1,  0,  1 },
-  //   { -1,  1, -1 },
-  //   { -1,  1,  0 },
-  //   { -1,  1,  1 },
-  //   {  0, -1, -1 },
-  //   {  0, -1,  0 },
-  //   {  0, -1,  1 },
-  //   {  0,  0, -1 },
-  //   {  0,  0,  0 },
-  //   {  0,  0,  1 },
-  //   {  0,  1, -1 },
-  //   {  0,  1,  0 },
-  //   {  0,  1,  1 },
-  //   {  1, -1, -1 },
-  //   {  1, -1,  0 },
-  //   {  1, -1,  1 },
-  //   {  1,  0, -1 },
-  //   {  1,  0,  0 },
-  //   {  1,  0,  1 },
-  //   {  1,  1, -1 },
-  //   {  1,  1,  0 },
-  //   {  1,  1,  1 },
-  // };
-  // 
-  // for (size_t t = 0; t < (sizeof(trials) / sizeof(trials[0])); t += 1) {
-  //   // ONodes[0]->Reset();
-  //   // ONodes[1]->Reset();
-  // 
-  //   for (auto &i : INodes) {
-  //     i->Reset();
-  //   }
-  //   for (auto &o : ONodes) {
-  //     o->Reset();
-  //   }
-  //   for (auto &p : PNodes) {
-  //     p->Reset();
-  //   }
-  // 
-  //   for (size_t i = 0; i < 3; i += 1) {
-  //     INodes[i]->setValue(trials[t][i]);
-  //   }
-  // 
-  //   int o0 = ONodes[0]->Evaluate();
-  //   int o1 = ONodes[1]->Evaluate();
-  // 
-  //   Dump();
-  // 
-  //   cout << "{"
-  //        << trials[t][0]
-  //        << ","
-  //        << trials[t][1]
-  //        << ","
-  //        << trials[t][2]
-  //        << "} -> {"
-  //        << o0
-  //        << ","
-  //        << o1
-  //        << "}\n";
-  // }
+      // cout << "# "
+      // 	   << cycle
+      // 	   << " ------------------------------------------------------------------------\n";
+      // Dump();
 
-  for (size_t t = 0; t < 1000; t += 1) {
-    for (auto &i : INodes) {
-      i->Reset();
+      isDone = 0 == hasMore && nPNodes == PNodes.size();
     }
+
     for (auto &o : ONodes) {
-      o->Reset();
-    }
-    for (auto &p : PNodes) {
-      p->Reset();
+      double oValue = o->Evaluate();
     }
 
-    INodes[0]->setValue(rand() % 11 - 5);
-    INodes[1]->setValue(rand() % 11 - 5);
-    INodes[2]->setValue(rand() % 11 - 5);
+    for (size_t p = 0; p < PNodes.size(); /* empty */) {
+      if (!PNodes[p]->isEvaluated()) {
+	if ((p + 1) < PNodes.size()) {
+	  std::swap(PNodes[p], PNodes.back());
+	}
+	delete PNodes.back();
+	PNodes.pop_back();
+      } else {
+	p += 1;
+      }
+    }
+    for (size_t o = 0; o < ONodes.size(); /* empty */) {
+      if (ONodes[o]->empty()) {
+	if ((o + 1) < ONodes.size()) {
+	  std::swap(ONodes[o], ONodes.back());
+	}
+	delete ONodes.back();
+	ONodes.pop_back();
+      } else {
+	o += 1;
+      }
+    }
+    for (size_t i = 0; i < INodes.size(); /* empty */) {
+      if (INodes[i]->empty()) {
+	if ((i + 1) < INodes.size()) {
+	  std::swap(INodes[i], INodes.back());
+	}
+	delete INodes.back();
+	INodes.pop_back();
+      } else {
+	i += 1;
+      }
+    }
 
-    ONodes[0]->Reset();
-    ONodes[1]->Reset();
+    if (!INodes.empty() && !ONodes.empty() && !PNodes.empty()) {
+      double sumSquaredError = 0.0;
+      for (size_t t = 0; t < 1000; t += 1) {
+	for (auto &i : INodes) {
+	  i->Reset();
+	}
+	for (auto &o : ONodes) {
+	  o->Reset();
+	}
+	for (auto &p : PNodes) {
+	  p->Reset();
+	}
 
-    int o0 = ONodes[0]->Evaluate();
-    int o1 = ONodes[1]->Evaluate();
+	double mean = 0.0;
+	for (auto &i : INodes) {
+	  double value = rand() % 11 - 5;
+	  i->setValue(value);
+	  mean += value;
+	}
+	mean /= INodes.size();
 
-    cout << "{" << INodes[0]->Evaluate()
-         << "," << INodes[1]->Evaluate()
-         << "," << INodes[2]->Evaluate()
-         << "} -> {" << o0 << "," << o1 << "}\n";
+	for (auto &o : ONodes) {
+	  o->Reset();
+	}
+
+	char const *comma = "{";
+	for (auto &i : INodes) {
+	  cout << comma << " " << i->Evaluate();
+	  comma = ",";
+	}
+	cout << " } (" << mean << ") -> ";
+	comma = "{";
+	for (auto &o : ONodes) {
+	  double result = o->Evaluate();
+	  cout << comma << " " << result;
+	  comma = ",";
+
+	  double error = mean - result;
+	  sumSquaredError += error * error;
+	}
+	cout << " }\n";
+      }
+      cout << "sumSquaredError = " << sumSquaredError << "\n\n";
+    }
+
+    Dump();
   }
-
-  Dump();
 
   return 0;
 }
